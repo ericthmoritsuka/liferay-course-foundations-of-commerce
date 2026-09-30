@@ -1,0 +1,26 @@
+{
+	"admin": {
+		"email": "admin@minium.demo",
+		"password": "learn"
+	},
+	"brenda": {
+		"email": "brenda@sauto.demo",
+		"password": "learn"
+	},
+	"chris": {
+		"email": "chris@minium.demo",
+		"password": "learn"
+	},
+	"gloria": {
+		"email": "gloria@minium.demo",
+		"password": "learn"
+	},
+	"mike": {
+		"email": "mike@sauto.demo",
+		"password": "learn"
+	},
+	"roberto": {
+		"email": "roberto@leoauto.demo",
+		"password": "learn"
+	}
+}
