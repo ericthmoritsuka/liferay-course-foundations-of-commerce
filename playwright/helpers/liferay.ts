@@ -1262,7 +1262,11 @@ async function chooseAction(page: Page, field: string, value: string, fromFill =
 					return;
 				}
 
-				await page.keyboard.press('Escape');
+				//
+				// Closed by the button that opened it, as the spacing box is
+				// below: Escape also clears the page editor's selection.
+				//
+				await trigger.click({timeout: 5000}).catch(() => undefined);
 			}
 
 			//
@@ -1276,7 +1280,13 @@ async function chooseAction(page: Page, field: string, value: string, fromFill =
 
 			if (await itself.isVisible().catch(() => false)) {
 				const shown = ((await itself.innerText().catch(() => '')) || '').trim();
-				const token = value.split(' - ')[0].trim();
+
+				//
+				// The size is the lesson's to write how it likes: "Spacer 4 -
+				// 1.5 rem" in one course, "Spacer 4 (1.5rem)" in another. Left
+				// on, the parenthesis hid the number, and no item matched.
+				//
+				const token = value.split(' - ')[0].replace(/\s*\([^)]*\)\s*$/, '').trim();
 
 				await itself.click({timeout: 5000});
 
@@ -1317,7 +1327,12 @@ async function chooseAction(page: Page, field: string, value: string, fromFill =
 					return;
 				}
 
-				await page.keyboard.press('Escape');
+				//
+				// Closed by its own button, not by Escape. In the page editor
+				// Escape also clears the selection, so a miss here left the
+				// configuration panel empty and every retry found no field.
+				//
+				await itself.click({timeout: 5000}).catch(() => undefined);
 			}
 		}
 	}
@@ -3141,7 +3156,15 @@ async function pressAction(
 		// found themselves signed out. Where the sentence named a row, the
 		// icon is looked for only inside it.
 		//
-		const drawnIn = `button:has(svg use[href$="#${drawn}"]), [role="button"]:has(svg use[href$="#${drawn}"])`;
+		//
+		// Or its small form. Clay draws many icons in a -small variant: the
+		// account selector's Back is angle-left-small (commerce-frontend-js
+		// OrdersListView.js), so "*Back* (icon-angle-left)" found no control
+		// once the loose name match no longer reached "Back to Accounts".
+		//
+		const drawnIn = [drawn, `${drawn}-small`]
+			.map((symbol) => `button:has(svg use[href$="#${symbol}"]), [role="button"]:has(svg use[href$="#${symbol}"])`)
+			.join(', ');
 
 		const containers = (text: string) =>
 			`.form-group:has-text("${text}"), tr:has-text("${text}"), [role="row"]:has-text("${text}"), ` +
@@ -3175,16 +3198,75 @@ async function pressAction(
 			// same section is not the Add the lesson drew. Two matches in one
 			// scope are refused, never resolved by taking the first.
 			//
-			const tight = (frame as Frame).locator(`:text-is("${inside}")`).locator('xpath=..');
+			// Every element whose text is the name, not the first, and up
+			// from each to the nearest level that holds an icon control. The
+			// Content Dashboard's chart reads "Content" in a span nested in
+			// the heading's first column, and its cog is in the next column:
+			// :text-is() matches the smallest element, whose parent holds no
+			// cog. One icon control across them all is the one.
+			//
+			const around = (frame as Frame).locator(`:text-is("${inside}")`);
 
-			for (const [scope, nameless] of [[tight, false], [(frame as Frame).locator(containers(inside)).last(), true]] as [Locator, boolean][]) {
+			for (const [scope, nameless] of [[around, false], [(frame as Frame).locator(containers(inside)).last(), true]] as [Locator, boolean][]) {
 				if (!(await scope.count().catch(() => 0))) {
 					continue;
 				}
 
 				const shown: Locator[] = [];
+				const candidates: Locator[] = [];
 
-				for (const element of await scope.first().locator(drawnIn).all().catch(() => [])) {
+				if (scope === around) {
+					for (const holder of (await scope.all().catch(() => [])).slice(0, 12)) {
+						//
+						// Past the text's own parent, only a control with no
+						// name of its own counts: climbing from "Personalized
+						// Variations" otherwise reached Add Condition in the
+						// next column, the press E4 exists to refuse.
+						//
+						for (let level = 1; level <= 6; level++) {
+							let found = await holder.locator(`xpath=ancestor-or-self::*[${level}]`).locator(drawnIn).all().catch(() => []);
+
+							if (level > 2) {
+								const nameless: Locator[] = [];
+
+								for (const element of found) {
+									if (await element.evaluate((node) =>
+										((node.getAttribute('aria-label') || node.getAttribute('title') || node.textContent || '').trim()) === ''
+									).catch(() => false)) {
+										nameless.push(element);
+									}
+								}
+
+								found = nameless;
+							}
+
+							if (found.length) {
+								candidates.push(...found);
+
+								break;
+							}
+						}
+					}
+				}
+				else {
+					candidates.push(...(await scope.first().locator(drawnIn).all().catch(() => [])));
+				}
+
+				const seenHandles: string[] = [];
+
+				for (const element of candidates) {
+					const key = await element.evaluate((node) => {
+						const all = Array.from(document.querySelectorAll('*'));
+
+						return String(all.indexOf(node));
+					}).catch(() => '');
+
+					if (key && seenHandles.includes(key)) {
+						continue;
+					}
+
+					seenHandles.push(key);
+
 					if (!(await element.isVisible().catch(() => false))) {
 						continue;
 					}
@@ -3808,7 +3890,7 @@ async function chooseExperienceAction(page: Page, experience: string) {
 
 		throw new Error(
 			count === 0
-				? `the experience selector lists no experience named "${experience}" (it lists ${listed.map((name) => `"${name}"`).join(', ')})`
+				? `the experience selector lists no experience named "${experience}" (it lists ${listed.length ? listed.map((name) => `"${name}"`).join(', ') : 'none'})`
 				: `the experience selector lists ${count} experiences named "${experience}"`
 		);
 	}
